@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>首尔消费助手 · 韩元换算</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        body { font-family: 'Inter', -apple-system, sans-serif; }
+        .currency-card {
+            background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+        }
+        .list-item-enter { animation: slideIn 0.3s ease-out; }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(20px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+        .warning-glow {
+            animation: glow 1.5s infinite alternate;
+        }
+        @keyframes glow {
+            from { box-shadow: 0 0 5px rgba(239, 68, 68, 0.2); }
+            to { box-shadow: 0 0 20px rgba(239, 68, 68, 0.6); }
+        }
+        /* 自定义模态框 */
+        #confirmModal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(4px);
+            z-index: 100;
+            align-items: center;
+            justify-content: center;
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 antialiased">
+
+    <!-- 自定义确认弹窗 -->
+    <div id="confirmModal">
+        <div class="bg-white rounded-3xl p-6 w-80 shadow-2xl scale-in transform transition-transform">
+            <h3 class="text-lg font-bold mb-2">确定清空吗？</h3>
+            <p class="text-slate-500 text-sm mb-6">所有的记账记录都将被永久删除，无法恢复哦。</p>
+            <div class="flex space-x-3">
+                <button onclick="closeModal()" class="flex-1 py-3 bg-slate-100 rounded-2xl font-semibold text-slate-600 active:scale-95 transition-transform">取消</button>
+                <button onclick="executeReset()" class="flex-1 py-3 bg-rose-500 rounded-2xl font-semibold text-white active:scale-95 transition-transform">确定清空</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="max-w-md mx-auto min-h-screen flex flex-col p-6 pb-32">
+        <!-- 头部与汇率设置 -->
+        <header class="mb-8">
+            <h1 class="text-2xl font-bold mb-2">首尔消费助手</h1>
+            <div class="flex items-center text-sm text-slate-500 bg-white p-3 rounded-xl border border-slate-100 shadow-sm">
+                <i class="fas fa-sync-alt mr-2 text-indigo-500"></i>
+                <span>当前参考汇率: 1 CNY ≈ </span>
+                <input type="number" id="rateInput" value="190" class="w-16 font-bold text-indigo-600 focus:outline-none ml-1 bg-transparent" onchange="updateRate()">
+                <span class="ml-1 text-xs">KRW</span>
+            </div>
+        </header>
+
+        <!-- 总计卡片 -->
+        <div class="currency-card rounded-3xl p-6 text-white shadow-xl mb-8 relative overflow-hidden" id="totalCard">
+            <div class="relative z-10">
+                <p class="text-indigo-100 text-sm font-medium mb-1">累计消费 (CNY)</p>
+                <h2 class="text-4xl font-bold mb-4">¥ <span id="totalCNY">0.00</span></h2>
+                <div class="flex justify-between items-end">
+                    <p class="text-indigo-100 text-xs">约合 <span id="totalKRW">0</span> KRW</p>
+                    <button onclick="showResetModal()" class="text-[10px] bg-white/20 hover:bg-white/30 px-3 py-1 rounded-full transition-colors">
+                        清空记录
+                    </button>
+                </div>
+            </div>
+            <div class="absolute -right-8 -top-8 w-32 h-32 bg-white/10 rounded-full"></div>
+        </div>
+
+        <!-- 提示信息区域 -->
+        <div id="alertBox" class="hidden mb-6 p-4 rounded-2xl border-2 flex items-center space-x-3 transition-all duration-500">
+            <div id="alertIcon" class="w-10 h-10 rounded-full flex items-center justify-center text-xl"></div>
+            <div>
+                <p id="alertTitle" class="font-bold text-sm"></p>
+                <p id="alertMessage" class="text-xs opacity-80"></p>
+            </div>
+        </div>
+
+        <!-- 输入区域 -->
+        <div class="bg-white rounded-3xl p-6 shadow-sm border border-slate-100 mb-8">
+            <label class="block text-xs font-bold text-slate-400 uppercase tracking-widest mb-3">新增一笔韩元支出</label>
+            <div class="flex space-x-2">
+                <div class="relative flex-1">
+                    <span class="absolute left-4 top-1/2 -translate-y-1/2 font-bold text-slate-400 text-lg">₩</span>
+                    <input type="number" id="krwInput" placeholder="输入韩元金额" 
+                           class="w-full pl-10 pr-4 py-4 bg-slate-50 rounded-2xl focus:ring-2 focus:ring-indigo-500 focus:outline-none font-bold text-xl"
+                           onkeyup="if(event.keyCode===13) addRecord()">
+                </div>
+                <button onclick="addRecord()" class="bg-indigo-600 text-white w-14 h-14 rounded-2xl shadow-lg shadow-indigo-200 active:scale-90 transition-transform flex items-center justify-center">
+                    <i class="fas fa-plus text-xl"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- 消费列表 -->
+        <div class="flex-1">
+            <h3 class="text-sm font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">消费清单</h3>
+            <div id="recordList" class="space-y-3">
+                <div id="emptyState" class="py-12 text-center">
+                    <div class="text-slate-200 text-5xl mb-4"><i class="fas fa-receipt"></i></div>
+                    <p class="text-slate-400 text-sm">还没有记账哦，开始购物吧！</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let records = [];
+        let exchangeRate = 190;
+        let totalCNY = 0;
+
+        function updateRate() {
+            exchangeRate = parseFloat(document.getElementById('rateInput').value) || 190;
+            recalculateTotal();
+        }
+
+        function addRecord() {
+            const input = document.getElementById('krwInput');
+            const krwValue = parseFloat(input.value);
+            
+            if (!krwValue || krwValue <= 0) return;
+
+            const cnyValue = krwValue / exchangeRate;
+            const newRecord = {
+                id: Date.now(),
+                krw: krwValue,
+                cny: cnyValue,
+                time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+            };
+
+            records.unshift(newRecord);
+            input.value = '';
+            updateUI();
+        }
+
+        function deleteRecord(id) {
+            records = records.filter(r => r.id !== id);
+            updateUI();
+        }
+
+        function recalculateTotal() {
+            records = records.map(r => ({...r, cny: r.krw / exchangeRate}));
+            updateUI();
+        }
+
+        function updateUI() {
+            const listContainer = document.getElementById('recordList');
+            const emptyState = document.getElementById('emptyState');
+            
+            totalCNY = records.reduce((sum, r) => sum + r.cny, 0);
+            const totalKRW = records.reduce((sum, r) => sum + r.krw, 0);
+
+            document.getElementById('totalCNY').innerText = totalCNY.toFixed(2);
+            document.getElementById('totalKRW').innerText = Math.round(totalKRW).toLocaleString();
+
+            const items = listContainer.querySelectorAll('.record-item');
+            items.forEach(i => i.remove());
+
+            if (records.length === 0) {
+                emptyState.style.display = 'block';
+            } else {
+                emptyState.style.display = 'none';
+                const html = records.map(r => `
+                    <div class="record-item list-item-enter bg-white p-4 rounded-2xl flex justify-between items-center shadow-sm border border-slate-50">
+                        <div class="flex items-center space-x-3">
+                            <div class="w-10 h-10 bg-slate-50 rounded-full flex items-center justify-center text-slate-400 text-xs">
+                                ${r.time}
+                            </div>
+                            <div>
+                                <p class="font-bold text-slate-800">₩${r.krw.toLocaleString()}</p>
+                                <p class="text-[10px] text-slate-400">约 ¥${r.cny.toFixed(2)}</p>
+                            </div>
+                        </div>
+                        <button onclick="deleteRecord(${r.id})" class="text-slate-300 hover:text-rose-500 p-2 transition-colors">
+                            <i class="far fa-trash-alt"></i>
+                        </button>
+                    </div>
+                `).join('');
+                listContainer.insertAdjacentHTML('beforeend', html);
+            }
+
+            checkThresholds();
+        }
+
+        function checkThresholds() {
+            const alertBox = document.getElementById('alertBox');
+            const alertIcon = document.getElementById('alertIcon');
+            const alertTitle = document.getElementById('alertTitle');
+            const alertMessage = document.getElementById('alertMessage');
+            const totalCard = document.getElementById('totalCard');
+
+            let alertData = null;
+
+            if (totalCNY >= 4000) {
+                alertData = { title: "别花了！", msg: "已经超过4000元了，回酒店休息吧。", color: "border-rose-500 bg-rose-50 text-rose-700", icon: "fa-hand-paper", iconBg: "bg-rose-500", glow: true };
+            } else if (totalCNY >= 3000) {
+                alertData = { title: "你买大件了吗？", msg: "3000元是个坎，思考一下是否有冲动消费。", color: "border-orange-500 bg-orange-50 text-orange-700", icon: "fa-shopping-bag", iconBg: "bg-orange-500", glow: false };
+            } else if (totalCNY >= 2000) {
+                alertData = { title: "克制克制。", msg: "消费已达2000元，钱包需要呼吸。", color: "border-amber-500 bg-amber-50 text-amber-700", icon: "fa-balance-scale", iconBg: "bg-amber-500", glow: false };
+            } else if (totalCNY >= 1000) {
+                alertData = { title: "今天是第几天啊？", msg: "已经花了1000元啦，注意进度。", color: "border-indigo-500 bg-indigo-50 text-indigo-700", icon: "fa-calendar-day", iconBg: "bg-indigo-500", glow: false };
+            }
+
+            if (alertData) {
+                alertBox.className = `flex mb-6 p-4 rounded-2xl border-2 space-x-3 transition-all duration-500 ${alertData.color}`;
+                alertIcon.className = `w-10 h-10 rounded-full flex items-center justify-center text-white text-xl ${alertData.iconBg}`;
+                alertIcon.innerHTML = `<i class="fas ${alertData.icon}"></i>`;
+                alertTitle.innerText = alertData.title;
+                alertMessage.innerText = alertData.msg;
+                
+                if (alertData.glow) totalCard.classList.add('warning-glow');
+                else totalCard.classList.remove('warning-glow');
+            } else {
+                alertBox.className = "hidden";
+                totalCard.classList.remove('warning-glow');
+            }
+        }
+
+        // 弹窗控制
+        function showResetModal() {
+            document.getElementById('confirmModal').style.display = 'flex';
+        }
+
+        function closeModal() {
+            document.getElementById('confirmModal').style.display = 'none';
+        }
+
+        function executeReset() {
+            records = [];
+            updateUI();
+            closeModal();
+        }
+
+        updateUI();
+    </script>
+</body>
+</html>
